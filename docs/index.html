@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>ForgeMaster Timer</title>
+  <style>
+    body{font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial;margin:20px}
+    header{display:flex;align-items:center;gap:12px}
+    .profiles{display:flex;flex-wrap:wrap;gap:12px;margin-top:12px}
+    .profile{border:1px solid #ccc;padding:12px;border-radius:6px;width:260px}
+    .profile h3{margin:0 0 8px 0}
+    label{display:block;margin-top:6px;font-size:13px}
+    input[type=text]{width:100%;padding:6px;margin-top:4px}
+    button{margin-top:8px}
+    #upcoming{margin-top:18px}
+    .item{padding:6px 8px;border-bottom:1px solid #eee}
+    .muted{color:#666;font-size:13px}
+  </style>
+</head>
+<body>
+  <header>
+    <h1>ForgeMaster Timer</h1>
+    <button id="addProfile">Add Profile</button>
+  </header>
+  <div class="profiles" id="profiles"></div>
+  <section id="upcoming">
+    <h2>Upcoming timers</h2>
+    <div id="upcomingList"></div>
+  </section>
+
+  <script>
+    // Data model: profiles: {id, name, timers: {forge: timestamp|null, tech: timestamp|null}}
+    const STORAGE_KEY = 'forgemaster_timers_v1'
+    let profiles = []
+
+    function save(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(profiles)) }
+    function load(){ try{ profiles = JSON.parse(localStorage.getItem(STORAGE_KEY)) || [] }catch(e){profiles=[]} }
+
+    function uid(){ return Math.random().toString(36).slice(2,9) }
+
+    function parseDurationToFuture(durationStr){
+      if(!durationStr) return null
+      durationStr = durationStr.trim()
+      // If it looks like a date/ISO, try parsing it
+      if(/^[0-9]{10,}$/.test(durationStr) || /[T:\-]/.test(durationStr)){
+        const d = new Date(durationStr)
+        if(!isNaN(d)) return d.getTime()
+      }
+      // Parse tokens like "1d", "19h", "40m", "30s"
+      const tokenRe = /([0-9]+)\s*(d|h|m|s)/gi
+      let match, totalMs = 0
+      while((match = tokenRe.exec(durationStr)) !== null){
+        const val = parseInt(match[1],10)
+        const unit = match[2].toLowerCase()
+        if(unit==='d') totalMs += val*24*60*60*1000
+        if(unit==='h') totalMs += val*60*60*1000
+        if(unit==='m') totalMs += val*60*1000
+        if(unit==='s') totalMs += val*1000
+      }
+      if(totalMs===0) return null
+      return Date.now()+totalMs
+    }
+
+    function formatRemaining(ms){
+      if(ms<=0) return 'Expired'
+      const s = Math.floor(ms/1000)
+      const days = Math.floor(s/86400)
+      const hours = Math.floor((s%86400)/3600)
+      const mins = Math.floor((s%3600)/60)
+      const secs = s%60
+      let parts = []
+      if(days) parts.push(days+'d')
+      if(hours) parts.push(hours+'h')
+      if(mins) parts.push(mins+'m')
+      parts.push(secs+'s')
+      return parts.join(' ')
+    }
+
+    function renderProfiles(){
+      const container = document.getElementById('profiles')
+      container.innerHTML = ''
+      profiles.forEach(p=>{
+        const el = document.createElement('div')
+        el.className='profile'
+        el.dataset.id = p.id
+        el.innerHTML = `<h3 contenteditable="true" class="name">${escapeHtml(p.name||'Profile')}</h3>
+          <label>Forge
+            <input type="text" class="forgeInput" placeholder="e.g. 1d19h40m or 2h30m" value="${p.timers.forgeInput||''}">
+          </label>
+          <div class="muted">Remaining: <span class="forgeRemaining">${p.timers.forge?formatRemaining(p.timers.forge - Date.now()):'—'}</span></div>
+          <label>Tech
+            <input type="text" class="techInput" placeholder="e.g. 1d19h40m" value="${p.timers.techInput||''}">
+          </label>
+          <div class="muted">Remaining: <span class="techRemaining">${p.timers.tech?formatRemaining(p.timers.tech - Date.now()):'—'}</span></div>
+          <div style="display:flex;gap:6px;justify-content:flex-end">
+            <button class="saveBtn">Save</button>
+            <button class="clearBtn">Clear</button>
+            <button class="delBtn">Delete</button>
+          </div>`
+        container.appendChild(el)
+
+        el.querySelector('.saveBtn').addEventListener('click', ()=>{
+          const name = el.querySelector('.name').innerText.trim() || 'Profile'
+          p.name = name
+          const fi = el.querySelector('.forgeInput').value.trim()
+          const ti = el.querySelector('.techInput').value.trim()
+          p.timers.forgeInput = fi
+          p.timers.techInput = ti
+          const fts = parseDurationToFuture(fi)
+          const tts = parseDurationToFuture(ti)
+          p.timers.forge = fts
+          p.timers.tech = tts
+          save(); renderProfiles(); renderUpcoming()
+        })
+        el.querySelector('.clearBtn').addEventListener('click', ()=>{
+          p.timers.forge = null; p.timers.tech = null; p.timers.forgeInput=''; p.timers.techInput=''
+          save(); renderProfiles(); renderUpcoming()
+        })
+        el.querySelector('.delBtn').addEventListener('click', ()=>{
+          profiles = profiles.filter(x=>x.id!==p.id); save(); renderProfiles(); renderUpcoming()
+        })
+      })
+    }
+
+    function renderUpcoming(){
+      const list = document.getElementById('upcomingList')
+      const entries = []
+      profiles.forEach(p=>{
+        if(p.timers.forge) entries.push({when:p.timers.forge, profile:p.name, key:'Forge'})
+        if(p.timers.tech) entries.push({when:p.timers.tech, profile:p.name, key:'Tech'})
+      })
+      entries.sort((a,b)=>a.when-b.when)
+      list.innerHTML = ''
+      entries.forEach(e=>{
+        const el = document.createElement('div')
+        el.className='item'
+        const rem = formatRemaining(e.when - Date.now())
+        const time = new Date(e.when).toLocaleString()
+        el.innerHTML = `<strong>${escapeHtml(e.profile)}</strong> — ${escapeHtml(e.key)} <div class="muted">in ${rem} • at ${time}</div>`
+        list.appendChild(el)
+      })
+      if(entries.length===0) list.innerHTML = '<div class="muted">No timers set</div>'
+    }
+
+    function escapeHtml(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') }
+
+    document.getElementById('addProfile').addEventListener('click', ()=>{
+      const p = {id:uid(), name:'Profile', timers:{forge:null,tech:null,forgeInput:'',techInput:''}}
+      profiles.push(p); save(); renderProfiles(); renderUpcoming()
+    })
+
+    // live update tick
+    function tick(){
+      document.querySelectorAll('.profile').forEach(el=>{
+        const id = el.dataset.id
+        const p = profiles.find(x=>x.id===id)
+        if(!p) return
+        const fr = el.querySelector('.forgeRemaining')
+        const tr = el.querySelector('.techRemaining')
+        fr.textContent = p.timers.forge ? formatRemaining(p.timers.forge - Date.now()) : '—'
+        tr.textContent = p.timers.tech ? formatRemaining(p.timers.tech - Date.now()) : '—'
+      })
+      renderUpcoming()
+    }
+
+    // initial load
+    load()
+    if(profiles.length===0){
+      profiles.push({id:uid(), name:'Profile 1', timers:{forge:null,tech:null,forgeInput:'',techInput:''}})
+      save()
+    }
+
+    renderProfiles()
+    renderUpcoming()
+    setInterval(tick,1000)
+  </script>
+</body>
+</html>
