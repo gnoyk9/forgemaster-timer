@@ -16,6 +16,11 @@
     #upcoming{margin-top:18px}
     .item{padding:6px 8px;border-bottom:1px solid #eee}
     .muted{color:#666;font-size:13px}
+    /* Upcoming list color coding */
+    .item.expired{background:#ffecec;color:#900}
+    .item.soon{background:#fff4e5;border-left:4px solid #ff8c00}
+    .item.short{background:#fffde7;border-left:4px solid #f1c40f}
+    .item.normal{background:#eefaf0;border-left:4px solid #2ecc71}
   </style>
 </head>
 <body>
@@ -31,11 +36,59 @@
 
   <script>
     // Data model: profiles: {id, name, timers: {forge: timestamp|null, tech: timestamp|null}}
+    // Storage uses the same STORAGE_KEY for backwards compatibility but saves a
+    // versioned payload {version:number, profiles: [...]}. A migration will
+    // upgrade older data shapes if present.
     const STORAGE_KEY = 'forgemaster_timers_v1'
     let profiles = []
 
-    function save(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(profiles)) }
-    function load(){ try{ profiles = JSON.parse(localStorage.getItem(STORAGE_KEY)) || [] }catch(e){profiles=[]} }
+    function save(){
+      const payload = {version:2, profiles}
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(payload))
+    }
+
+    function load(){
+      try{
+        const raw = localStorage.getItem(STORAGE_KEY)
+        if(!raw){ profiles = []; return }
+        const parsed = JSON.parse(raw)
+
+        // Old format (just an array) -> migrate
+        if(Array.isArray(parsed)){
+          profiles = parsed.map(p => ({
+            id: p.id||uid(),
+            name: p.name||'Profile',
+            timers: {
+              forge: p.timers?.forge ?? null,
+              tech: p.timers?.tech ?? null,
+              forgeInput: p.timers?.forgeInput || '',
+              techInput: p.timers?.techInput || ''
+            }
+          }))
+          save()
+          return
+        }
+
+        // Versioned or object format with profiles
+        if(parsed && parsed.profiles && Array.isArray(parsed.profiles)){
+          profiles = parsed.profiles.map(p => ({
+            id: p.id||uid(),
+            name: p.name||'Profile',
+            timers: {
+              forge: p.timers?.forge ?? null,
+              tech: p.timers?.tech ?? null,
+              forgeInput: p.timers?.forgeInput || '',
+              techInput: p.timers?.techInput || ''
+            }
+          }))
+          return
+        }
+
+        profiles = []
+      }catch(e){
+        profiles=[]
+      }
+    }
 
     function uid(){ return Math.random().toString(36).slice(2,9) }
 
@@ -134,8 +187,13 @@
       list.innerHTML = ''
       entries.forEach(e=>{
         const el = document.createElement('div')
-        el.className='item'
-        const rem = formatRemaining(e.when - Date.now())
+        const remMs = e.when - Date.now()
+        let cls = 'normal'
+        if(remMs <= 0) cls = 'expired'
+        else if(remMs < 60*60*1000) cls = 'soon'
+        else if(remMs < 24*60*60*1000) cls = 'short'
+        el.className = 'item ' + cls
+        const rem = formatRemaining(remMs)
         const time = new Date(e.when).toLocaleString()
         el.innerHTML = `<strong>${escapeHtml(e.profile)}</strong> — ${escapeHtml(e.key)} <div class="muted">in ${rem} • at ${time}</div>`
         list.appendChild(el)
