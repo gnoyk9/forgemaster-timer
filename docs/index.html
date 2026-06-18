@@ -15,6 +15,7 @@
     button{margin-top:8px}
     #upcoming{margin-top:18px}
     .item{padding:6px 8px;border-bottom:1px solid #eee}
+    .item{cursor:pointer}
     .muted{color:#666;font-size:13px}
     /* Upcoming list color coding */
     .item.expired{background:#ffecec;color:#900}
@@ -24,15 +25,15 @@
   </style>
 </head>
 <body>
+  <section id="upcoming">
+    <h2>Upcoming timers</h2>
+    <div id="upcomingList"></div>
+  </section>
   <header>
     <h1>ForgeMaster Timer</h1>
     <button id="addProfile">Add Profile</button>
   </header>
   <div class="profiles" id="profiles"></div>
-  <section id="upcoming">
-    <h2>Upcoming timers</h2>
-    <div id="upcomingList"></div>
-  </section>
 
   <script>
     // Data model: profiles: {id, name, timers: {forge: timestamp|null, tech: timestamp|null}}
@@ -185,8 +186,8 @@
       const list = document.getElementById('upcomingList')
       const entries = []
       profiles.forEach(p=>{
-        if(p.timers.forge) entries.push({when:p.timers.forge, profile:p.name, key:'Forge'})
-        if(p.timers.tech) entries.push({when:p.timers.tech, profile:p.name, key:'Tech'})
+        if(p.timers.forge) entries.push({when:p.timers.forge, profile:p.name, key:'Forge', id:p.id})
+        if(p.timers.tech) entries.push({when:p.timers.tech, profile:p.name, key:'Tech', id:p.id})
       })
       entries.sort((a,b)=>a.when-b.when)
       list.innerHTML = ''
@@ -198,9 +199,25 @@
         else if(remMs < 60*60*1000) cls = 'soon'
         else if(remMs < 24*60*60*1000) cls = 'short'
         el.className = 'item ' + cls
+        el.setAttribute('data-id', e.id)
+        el.setAttribute('data-key', e.key)
         const rem = formatRemaining(remMs)
         const time = new Date(e.when).toLocaleString()
         el.innerHTML = `<strong>${escapeHtml(e.profile)}</strong> — ${escapeHtml(e.key)} <div class="muted">in ${rem} • at ${time}</div>`
+        el.addEventListener('click', ()=>{
+          // Find the profile element by id and focus the corresponding input
+          const pid = el.getAttribute('data-id')
+          const key = el.getAttribute('data-key')
+          const profileEl = document.querySelector(`.profile[data-id="${pid}"]`)
+          if(!profileEl) return
+          const inputSelector = key === 'Forge' ? '.forgeInput' : '.techInput'
+          const input = profileEl.querySelector(inputSelector)
+          if(!input) return
+          input.focus()
+          input.select()
+          // scroll into view so the user sees the profile
+          profileEl.scrollIntoView({behavior:'smooth', block:'center'})
+        })
         list.appendChild(el)
       })
       if(entries.length===0) list.innerHTML = '<div class="muted">No timers set</div>'
