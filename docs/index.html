@@ -139,11 +139,11 @@
         el.dataset.id = p.id
         el.innerHTML = `<h3 contenteditable="true" class="name">${escapeHtml(p.name||'Profile')}</h3>
           <label>Forge
-            <input type="text" class="forgeInput" placeholder="e.g. 1d19h40m or 2h30m" value="${p.timers.forgeInput||''}">
+            <input type="text" class="forgeInput" placeholder="e.g. 1d19h40m or 2h30m" value="">
           </label>
           <div class="muted">Remaining: <span class="forgeRemaining">${p.timers.forge?formatRemaining(p.timers.forge - Date.now()):'—'}</span></div>
           <label>Tech
-            <input type="text" class="techInput" placeholder="e.g. 1d19h40m" value="${p.timers.techInput||''}">
+            <input type="text" class="techInput" placeholder="e.g. 1d19h40m" value="">
           </label>
           <div class="muted">Remaining: <span class="techRemaining">${p.timers.tech?formatRemaining(p.timers.tech - Date.now()):'—'}</span></div>
           <div style="display:flex;gap:6px;justify-content:flex-end">
@@ -158,12 +158,17 @@
           p.name = name
           const fi = el.querySelector('.forgeInput').value.trim()
           const ti = el.querySelector('.techInput').value.trim()
-          p.timers.forgeInput = fi
-          p.timers.techInput = ti
-          const fts = parseDurationToFuture(fi)
-          const tts = parseDurationToFuture(ti)
-          p.timers.forge = fts
-          p.timers.tech = tts
+          // Only update timers when a non-empty input is provided.
+          if(fi !== ''){
+            const fts = parseDurationToFuture(fi)
+            p.timers.forge = fts
+            p.timers.forgeInput = fi
+          }
+          if(ti !== ''){
+            const tts = parseDurationToFuture(ti)
+            p.timers.tech = tts
+            p.timers.techInput = ti
+          }
           save(); renderProfiles(); renderUpcoming()
         })
         el.querySelector('.clearBtn').addEventListener('click', ()=>{
